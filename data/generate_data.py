@@ -14,6 +14,10 @@ from utils import simulation
 
 # --- SIMULATION SETTINGS ---
 TOGGLE_CHANCE = 0.05 
+
+# Target Center: 32°46'36.7"N 35°01'24.3"E
+TARGET_LAT = 32.7768611
+TARGET_LON = 35.0234167
 # ---------------------------
 
 def recalculate_kinematics(trajectories):
@@ -60,7 +64,6 @@ def recalculate_kinematics(trajectories):
             path[-1].heading = path[-2].heading
 
 def inject_failures(trajectories):
-    # ... (Same as before) ...
     chance_pct = int(TOGGLE_CHANCE * 100)
     print(f"Injecting random walk failures ({chance_pct}% toggle chance)...")
     
@@ -90,10 +93,15 @@ def inject_failures(trajectories):
 def generate_file():
     args = cfg.parse_args()
     print(f"Generating data for {args.num_drones} drones...")
+    print(f"Centering around: {TARGET_LAT}, {TARGET_LON}")
+
+    # Use args for bounds calculation if you want dynamic sizing, 
+    # but we are anchoring the center to the constants now.
     
+    # Simple radius calculation logic based on config bounds or fixed
+    # We will derive a radius from the args if provided, or default
     bounds = cfg.calculate_bounds(args)
     min_lat, max_lat, min_lon, max_lon = bounds
-    
     lat_range = max_lat - min_lat
     lon_range = max_lon - min_lon
     min_dim = min(lat_range, lon_range)
@@ -108,8 +116,8 @@ def generate_file():
         
         path = simulation.generate_recorded_trajectory(
             drone_id=i+1,
-            center_lat=args.lat, 
-            center_lon=args.lon, 
+            center_lat=TARGET_LAT,  # UPDATED: Using explicit constant
+            center_lon=TARGET_LON,  # UPDATED: Using explicit constant
             radius_deg=r, 
             steps=300, 
             reverse=is_reversed
