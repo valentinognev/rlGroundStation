@@ -15,7 +15,7 @@ from utils import simulation
 # --- SIMULATION SETTINGS ---
 TOGGLE_CHANCE = 0.05 
 
-# Target Center: 32°46'36.7"N 35°01'24.3"E
+# Target Center: Technion, Haifa
 TARGET_LAT = 32.7768611
 TARGET_LON = 35.0234167
 # ---------------------------
@@ -90,16 +90,25 @@ def inject_failures(trajectories):
             
             trajectories[i][t].gps_3d_fix = gps_states[i]
 
+def simulate_telemetry(trajectories):
+    """
+    Generates test patterns for Battery and State Machine.
+    """
+    print("Simulating telemetry (Battery drain & State cycling)...")
+    for path in trajectories:
+        total_frames = len(path)
+        for i, state in enumerate(path):
+            # Battery: Linear drain from 100 to 0
+            state.battery_precentages = int(100 * (1 - i / total_frames))
+            
+            # State: Cycle 0-9 every 20 frames
+            state.sm_current_stat = (i // 20) % 10
+
 def generate_file():
     args = cfg.parse_args()
     print(f"Generating data for {args.num_drones} drones...")
     print(f"Centering around: {TARGET_LAT}, {TARGET_LON}")
 
-    # Use args for bounds calculation if you want dynamic sizing, 
-    # but we are anchoring the center to the constants now.
-    
-    # Simple radius calculation logic based on config bounds or fixed
-    # We will derive a radius from the args if provided, or default
     bounds = cfg.calculate_bounds(args)
     min_lat, max_lat, min_lon, max_lon = bounds
     lat_range = max_lat - min_lat
@@ -116,8 +125,8 @@ def generate_file():
         
         path = simulation.generate_recorded_trajectory(
             drone_id=i+1,
-            center_lat=TARGET_LAT,  # UPDATED: Using explicit constant
-            center_lon=TARGET_LON,  # UPDATED: Using explicit constant
+            center_lat=TARGET_LAT,
+            center_lon=TARGET_LON,
             radius_deg=r, 
             steps=300, 
             reverse=is_reversed
@@ -129,6 +138,9 @@ def generate_file():
     
     # --- 2. INJECT FAILURES ---
     inject_failures(trajectories)
+
+    # --- 3. SIMULATE TELEMETRY (NEW) ---
+    simulate_telemetry(trajectories)
 
     output_path = os.path.join(current_dir, "recording.json")
     

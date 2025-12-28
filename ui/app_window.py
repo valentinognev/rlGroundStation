@@ -8,13 +8,12 @@ class DroneApp:
     
     # Playback Settings
     RENDER_DELAY = 16       # ms (approx 60 FPS)
-    PLAY_SPEED = 0.3        # Data frames to advance per render tick (Controls speed)
+    PLAY_SPEED = 0.3        # Data frames to advance per render tick
 
     def __init__(self, root, map_bounds, width, height, resolution, on_load_request):
         self.root = root
         self.is_running = False
         
-        # Changed from integer frame_idx to float play_head
         self.play_head = 0.0
         self.max_frames = 0
         self.trajectories = [] 
@@ -75,35 +74,28 @@ class DroneApp:
         self.draw_frame()
 
     def on_scrub(self, frame_idx):
-        # Scrubbing snaps to integer frames
         self.play_head = float(frame_idx)
         self.draw_frame()
 
-    # --- INTERPOLATION HELPERS ---
     def lerp(self, a, b, t):
         return a + (b - a) * t
 
     def lerp_angle(self, a, b, t):
-        # Handles 359 -> 1 degree crossover smoothly
         diff = (b - a + 180) % 360 - 180
         return (a + diff * t) % 360
 
     def draw_frame(self):
         self.map_view.clear_drones()
         
-        # 1. Determine Indices
         idx_current = int(self.play_head)
         idx_next = idx_current + 1
         
-        # Clamp
         if idx_next > self.max_frames:
             idx_next = self.max_frames
-            idx_current = self.max_frames # Stop exactly at end
+            idx_current = self.max_frames 
         
-        # 2. Determine Alpha (Interpolation Factor 0.0 -> 1.0)
         alpha = self.play_head - idx_current
         
-        # Update UI slider (cast to int for display)
         self.controls.update_frame_label(idx_current)
         if int(self.controls.slider.get()) != idx_current and self.is_running:
              self.controls.slider.set(idx_current)
@@ -112,50 +104,39 @@ class DroneApp:
         
         for i, path in enumerate(self.trajectories):
             if idx_current < len(path):
-                # Get Data for Interpolation
                 state_curr = path[idx_current]
                 
-                # Check if next frame exists for this specific drone
                 if idx_next < len(path):
                     state_next = path[idx_next]
                     
-                    # --- INTERPOLATE ---
                     lat = self.lerp(state_curr.lat, state_next.lat, alpha)
                     lon = self.lerp(state_curr.lon, state_next.lon, alpha)
                     heading = self.lerp_angle(state_curr.heading, state_next.heading, alpha)
                     
-                    # Velocity
                     vn = self.lerp(state_curr.velocity_north, state_next.velocity_north, alpha)
                     ve = self.lerp(state_curr.velocity_east, state_next.velocity_east, alpha)
                 else:
-                    # End of path for this drone, hold last state
                     lat = state_curr.lat
                     lon = state_curr.lon
                     heading = state_curr.heading
                     vn = state_curr.velocity_north
                     ve = state_curr.velocity_east
 
-                # For HUD (Keep Alive / GPS), we don't interpolate. 
-                # Just use the current integer frame.
+                # Store state for HUD
                 active_states[state_curr.id] = state_curr
                 
                 color_idx = (state_curr.id - 1) % len(self.DRONE_COLORS)
                 color = self.DRONE_COLORS[color_idx]
                 
+                # CORRECTED CALL: Only passing kinematics. Battery/State are handled in HUD.
                 self.map_view.draw_drone(lat, lon, heading, color, vn, ve)
 
         self.map_view.draw_hud(active_states, self.DRONE_COLORS)
 
     def animate_loop(self):
         if self.is_running:
-            # Increment play head
             self.play_head += self.PLAY_SPEED
-            
-            # Loop Logic
             if self.play_head >= self.max_frames:
                 self.play_head = 0.0
-            
             self.draw_frame()
-        
-        # Run at ~60 FPS
         self.root.after(self.RENDER_DELAY, self.animate_loop)
