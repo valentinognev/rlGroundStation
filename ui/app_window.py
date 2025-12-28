@@ -1,18 +1,26 @@
 import tkinter as tk
+import math
 from ui.map_canvas import MapCanvas
 from ui.controls import ControlPanel
 
 class DroneApp:
     DRONE_COLORS = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4", "#46f0f0"]
+    
+    # Playback Settings
+    RENDER_DELAY = 16       # ms (approx 60 FPS)
+    PLAY_SPEED = 0.3        # Data frames to advance per render tick (Controls speed)
 
     def __init__(self, root, map_bounds, width, height, resolution, on_load_request):
         self.root = root
         self.is_running = False
-        self.frame_idx = 0
+        
+        # Changed from integer frame_idx to float play_head
+        self.play_head = 0.0
         self.max_frames = 0
         self.trajectories = [] 
 
-        self.map_view = MapCanvas(root, map_bounds, width, height, resolution)
+        self.map_view = MapCanvas(root, map_bounds, width, height, resolution, 
+                                  on_redraw=self.draw_frame)
         self.map_view.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         callbacks = {
@@ -34,14 +42,19 @@ class DroneApp:
             self.controls.set_slider_max(self.max_frames)
             self.controls.update_status("Data Loaded")
             
-            all_lats, all_lons = [], []
+            initial_lats = []
+            initial_lons = []
             for path in trajectories:
-                for state in path:
-                    all_lats.append(state.lat)
-                    all_lons.append(state.lon)
+                if len(path) > 0:
+                    state = path[0]
+                    initial_lats.append(state.lat)
+                    initial_lons.append(state.lon)
             
-            if all_lats and all_lons:
-                self.map_view.fit_to_bounds(min(all_lats), max(all_lats), min(all_lons), max(all_lons))
+            if initial_lats and initial_lons:
+                avg_lat = sum(initial_lats) / len(initial_lats)
+                avg_lon = sum(initial_lons) / len(initial_lons)
+                print(f"Centering view on Swarm Center of Mass: {avg_lat:.5f}, {avg_lon:.5f}")
+                self.map_view.set_center(avg_lat, avg_lon)
 
             self.draw_frame()
 
@@ -56,49 +69,93 @@ class DroneApp:
 
     def reset(self):
         self.is_running = False
-        self.frame_idx = 0
+        self.play_head = 0.0
         self.controls.set_slider_val(0)
         self.controls.update_status("Reset")
         self.draw_frame()
 
     def on_scrub(self, frame_idx):
-        self.frame_idx = frame_idx
+        # Scrubbing snaps to integer frames
+        self.play_head = float(frame_idx)
         self.draw_frame()
+
+    # --- INTERPOLATION HELPERS ---
+    def lerp(self, a, b, t):
+        return a + (b - a) * t
+
+    def lerp_angle(self, a, b, t):
+        # Handles 359 -> 1 degree crossover smoothly
+        diff = (b - a + 180) % 360 - 180
+        return (a + diff * t) % 360
 
     def draw_frame(self):
         self.map_view.clear_drones()
-        self.controls.update_frame_label(self.frame_idx)
         
+        # 1. Determine Indices
+        idx_current = int(self.play_head)
+        idx_next = idx_current + 1
+        
+        # Clamp
+        if idx_next > self.max_frames:
+            idx_next = self.max_frames
+            idx_current = self.max_frames # Stop exactly at end
+        
+        # 2. Determine Alpha (Interpolation Factor 0.0 -> 1.0)
+        alpha = self.play_head - idx_current
+        
+        # Update UI slider (cast to int for display)
+        self.controls.update_frame_label(idx_current)
+        if int(self.controls.slider.get()) != idx_current and self.is_running:
+             self.controls.slider.set(idx_current)
+
         active_states = {} 
         
         for i, path in enumerate(self.trajectories):
-            if self.frame_idx < len(path):
-                state = path[self.frame_idx]
-                active_states[state.id] = state
+            if idx_current < len(path):
+                # Get Data for Interpolation
+                state_curr = path[idx_current]
                 
-                lat = state.lat
-                lon = state.lon
-                heading = state.heading
+                # Check if next frame exists for this specific drone
+                if idx_next < len(path):
+                    state_next = path[idx_next]
+                    
+                    # --- INTERPOLATE ---
+                    lat = self.lerp(state_curr.lat, state_next.lat, alpha)
+                    lon = self.lerp(state_curr.lon, state_next.lon, alpha)
+                    heading = self.lerp_angle(state_curr.heading, state_next.heading, alpha)
+                    
+                    # Velocity
+                    vn = self.lerp(state_curr.velocity_north, state_next.velocity_north, alpha)
+                    ve = self.lerp(state_curr.velocity_east, state_next.velocity_east, alpha)
+                else:
+                    # End of path for this drone, hold last state
+                    lat = state_curr.lat
+                    lon = state_curr.lon
+                    heading = state_curr.heading
+                    vn = state_curr.velocity_north
+                    ve = state_curr.velocity_east
+
+                # For HUD (Keep Alive / GPS), we don't interpolate. 
+                # Just use the current integer frame.
+                active_states[state_curr.id] = state_curr
                 
-                # Extract Velocity
-                vn = state.velocity_north
-                ve = state.velocity_east
-                
-                color_idx = (state.id - 1) % len(self.DRONE_COLORS)
+                color_idx = (state_curr.id - 1) % len(self.DRONE_COLORS)
                 color = self.DRONE_COLORS[color_idx]
                 
-                # Pass velocity to draw_drone
                 self.map_view.draw_drone(lat, lon, heading, color, vn, ve)
 
         self.map_view.draw_hud(active_states, self.DRONE_COLORS)
 
     def animate_loop(self):
         if self.is_running:
-            self.frame_idx += 1
-            if self.frame_idx > self.max_frames:
-                self.frame_idx = 0
+            # Increment play head
+            self.play_head += self.PLAY_SPEED
             
-            self.controls.set_slider_val(self.frame_idx)
+            # Loop Logic
+            if self.play_head >= self.max_frames:
+                self.play_head = 0.0
+            
             self.draw_frame()
         
-        self.root.after(50, self.animate_loop)
+        # Run at ~60 FPS
+        self.root.after(self.RENDER_DELAY, self.animate_loop)
