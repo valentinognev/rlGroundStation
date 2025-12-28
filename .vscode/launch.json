@@ -1,0 +1,20 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Drone Viz: File Mode",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "-s", "file",
+                "-p", "${workspaceFolder}/data/recording.json",
+                "--width", "1400",
+                "--height", "900",
+                "--res", "1e-6"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

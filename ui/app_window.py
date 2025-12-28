@@ -34,27 +34,17 @@ class DroneApp:
             self.controls.set_slider_max(self.max_frames)
             self.controls.update_status("Data Loaded")
             
-            # --- AUTO FIT LOGIC ---
-            # Find the min/max lat/lon across ALL drones and ALL frames
-            all_lats = []
-            all_lons = []
-            
+            all_lats, all_lons = [], []
             for path in trajectories:
                 for state in path:
                     all_lats.append(state.lat)
                     all_lons.append(state.lon)
             
             if all_lats and all_lons:
-                min_lat, max_lat = min(all_lats), max(all_lats)
-                min_lon, max_lon = min(all_lons), max(all_lons)
-                
-                print(f"Data Bounds: Lat[{min_lat:.5f}:{max_lat:.5f}] Lon[{min_lon:.5f}:{max_lon:.5f}]")
-                self.map_view.fit_to_bounds(min_lat, max_lat, min_lon, max_lon)
-            # ----------------------
+                self.map_view.fit_to_bounds(min(all_lats), max(all_lats), min(all_lons), max(all_lons))
 
             self.draw_frame()
 
-    # ... (Rest is unchanged)
     def play(self):
         if not self.trajectories: return
         self.is_running = True
@@ -79,15 +69,28 @@ class DroneApp:
         self.map_view.clear_drones()
         self.controls.update_frame_label(self.frame_idx)
         
+        active_states = {} 
+        
         for i, path in enumerate(self.trajectories):
             if self.frame_idx < len(path):
                 state = path[self.frame_idx]
+                active_states[state.id] = state
+                
                 lat = state.lat
                 lon = state.lon
                 heading = state.heading
                 
-                color = self.DRONE_COLORS[i % len(self.DRONE_COLORS)]
-                self.map_view.draw_drone(lat, lon, heading, color)
+                # Extract Velocity
+                vn = state.velocity_north
+                ve = state.velocity_east
+                
+                color_idx = (state.id - 1) % len(self.DRONE_COLORS)
+                color = self.DRONE_COLORS[color_idx]
+                
+                # Pass velocity to draw_drone
+                self.map_view.draw_drone(lat, lon, heading, color, vn, ve)
+
+        self.map_view.draw_hud(active_states, self.DRONE_COLORS)
 
     def animate_loop(self):
         if self.is_running:

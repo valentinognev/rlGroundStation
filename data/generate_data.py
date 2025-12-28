@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import random
 from dataclasses import asdict
 
 # --- PATH FIX ---
@@ -11,6 +12,54 @@ sys.path.append(root_dir)
 
 import core.cfg as cfg
 from utils import simulation
+
+# --- SIMULATION SETTINGS ---
+# Probability that a status toggles (On <-> Off) in a given frame.
+# 0.05 = 5% chance per step.
+TOGGLE_CHANCE = 0.05 
+# ---------------------------
+
+def inject_failures(trajectories):
+    """
+    Simulates a 'Random Walk' for both Communication and GPS status.
+    """
+    chance_pct = int(TOGGLE_CHANCE * 100)
+    print(f"Injecting random walk failures ({chance_pct}% toggle chance)...")
+    
+    num_drones = len(trajectories)
+    if num_drones == 0: return
+    num_frames = len(trajectories[0])
+
+    # 1. Initialize Running States
+    # Keep Alive: [observer_index][target_bit_index] (Initially Connected)
+    connection_matrix = [[1 for _ in range(4)] for _ in range(num_drones)]
+    
+    # GPS Fix: [drone_index] (Initially Fixed)
+    gps_states = [1 for _ in range(num_drones)]
+
+    # 2. Iterate through time
+    for t in range(num_frames):
+        for i in range(num_drones):
+            
+            # --- A. Communication Matrix Logic ---
+            new_mask = 0
+            for target_bit in range(4):
+                # Random Toggle Check
+                if random.random() < TOGGLE_CHANCE:
+                    connection_matrix[i][target_bit] ^= 1 # Flip 0->1 or 1->0
+                
+                # Build Mask
+                if connection_matrix[i][target_bit]:
+                    new_mask |= (1 << target_bit)
+            
+            trajectories[i][t].drones_keep_alive = new_mask
+            
+            # --- B. GPS Fix Logic ---
+            # Random Toggle Check
+            if random.random() < TOGGLE_CHANCE:
+                gps_states[i] ^= 1 # Flip 0->1 or 1->0
+            
+            trajectories[i][t].gps_3d_fix = gps_states[i]
 
 def generate_file():
     args = cfg.parse_args()
@@ -32,7 +81,6 @@ def generate_file():
         
         is_reversed = (i % 2 != 0)
         
-        # simulation.py is now purely a generator
         path = simulation.generate_recorded_trajectory(
             drone_id=i+1,
             center_lat=args.lat, 
@@ -43,11 +91,14 @@ def generate_file():
         )
         trajectories.append(path)
     
-    # --- SAVE LOGIC (Moved here) ---
+    # --- INJECT FAILURES ---
+    inject_failures(trajectories)
+    # -----------------------
+
+    # --- SAVE LOGIC ---
     output_path = os.path.join(current_dir, "recording.json")
     
     try:
-        # Convert dataclasses to list of dicts for JSON serialization
         serializable_data = []
         for path in trajectories:
             path_dicts = [asdict(state) for state in path]
