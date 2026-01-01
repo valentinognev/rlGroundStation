@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 import math
 from ui.map_canvas import MapCanvas
 from ui.controls import ControlPanel
@@ -18,10 +19,29 @@ class DroneApp:
         self.max_frames = 0
         self.trajectories = [] 
 
-        self.map_view = MapCanvas(root, map_bounds, width, height, resolution, 
-                                  on_redraw=self.draw_frame)
-        self.map_view.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        # --- 1. SETUP TABS (NOTEBOOK) ---
+        self.notebook = ttk.Notebook(root)
+        self.notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        
+        # Tab 1: Map View
+        self.tab_map = tk.Frame(self.notebook)
+        self.notebook.add(self.tab_map, text="Map View")
+        
+        # Tab 2: Graph View
+        self.tab_graphs = tk.Frame(self.notebook, bg="#f0f0f0")
+        self.notebook.add(self.tab_graphs, text="Graph Analysis")
+        
+        # Placeholder for Graphs
+        self.lbl_graph = tk.Label(self.tab_graphs, text="Graphs Placeholder\n(Coming Soon)", 
+                                  font=("Arial", 16), bg="#f0f0f0", fg="#888")
+        self.lbl_graph.pack(expand=True)
 
+        # --- 2. MAP CANVAS (Reparented to tab_map) ---
+        self.map_view = MapCanvas(self.tab_map, map_bounds, width, height, resolution, 
+                                  on_redraw=self.draw_frame)
+        self.map_view.pack(fill=tk.BOTH, expand=True)
+
+        # --- 3. CONTROLS (Common at bottom) ---
         callbacks = {
             'play': self.play,
             'pause': self.pause,
@@ -85,6 +105,7 @@ class DroneApp:
         return (a + diff * t) % 360
 
     def draw_frame(self):
+        # Even if hidden, we update the map so it's ready when tab is switched
         self.map_view.clear_drones()
         
         idx_current = int(self.play_head)
@@ -128,7 +149,6 @@ class DroneApp:
                 color_idx = (state_curr.id - 1) % len(self.DRONE_COLORS)
                 color = self.DRONE_COLORS[color_idx]
                 
-                # CORRECTED CALL: Only passing kinematics. Battery/State are handled in HUD.
                 self.map_view.draw_drone(lat, lon, heading, color, vn, ve)
 
         self.map_view.draw_hud(active_states, self.DRONE_COLORS)
