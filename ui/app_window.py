@@ -3,6 +3,7 @@ from tkinter import ttk
 import math
 from ui.map_canvas import MapCanvas
 from ui.controls import ControlPanel
+from ui.graph_panel import GraphPanel
 
 class DroneApp:
     DRONE_COLORS = ["#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231", "#911eb4", "#46f0f0"]
@@ -10,6 +11,10 @@ class DroneApp:
     # Playback Settings
     RENDER_DELAY = 16       # ms (approx 60 FPS)
     PLAY_SPEED = 0.3        # Data frames to advance per render tick
+    
+    # --- OPTIMIZATION: Graph Update Throttle ---
+    graph_update_counter = 0
+    GRAPH_SKIP_FRAMES = 3   # Update graph every N render ticks (approx 20 FPS)
 
     def __init__(self, root, map_bounds, width, height, resolution, on_load_request):
         self.root = root
@@ -31,10 +36,9 @@ class DroneApp:
         self.tab_graphs = tk.Frame(self.notebook, bg="#f0f0f0")
         self.notebook.add(self.tab_graphs, text="Graph Analysis")
         
-        # Placeholder for Graphs
-        self.lbl_graph = tk.Label(self.tab_graphs, text="Graphs Placeholder\n(Coming Soon)", 
-                                  font=("Arial", 16), bg="#f0f0f0", fg="#888")
-        self.lbl_graph.pack(expand=True)
+        # --- GRAPH PANEL INTEGRATION ---
+        self.graph_panel = GraphPanel(self.tab_graphs)
+        self.graph_panel.pack(fill=tk.BOTH, expand=True)
 
         # --- 2. MAP CANVAS (Reparented to tab_map) ---
         self.map_view = MapCanvas(self.tab_map, map_bounds, width, height, resolution, 
@@ -60,6 +64,9 @@ class DroneApp:
             self.max_frames = max(len(t) for t in trajectories) - 1
             self.controls.set_slider_max(self.max_frames)
             self.controls.update_status("Data Loaded")
+            
+            # Update Graph Data
+            self.graph_panel.set_data(trajectories, self.DRONE_COLORS)
             
             initial_lats = []
             initial_lons = []
@@ -152,6 +159,19 @@ class DroneApp:
                 self.map_view.draw_drone(lat, lon, heading, color, vn, ve)
 
         self.map_view.draw_hud(active_states, self.DRONE_COLORS)
+
+        # --- Update Graphs (with throttling and visibility check) ---
+        # Only update if the Graph tab is actually selected
+        current_tab = self.notebook.select()  # Returns widget ID
+        graph_tab_id = self.tab_graphs._w     # Get widget ID of graph tab frame (tk internal)
+        
+        # Tkinter widget IDs are strings. 
+        # notebook.select() returns the window path name of the currently selected pane.
+        if str(current_tab) == str(self.tab_graphs):
+            self.graph_update_counter += 1
+            if self.graph_update_counter >= self.GRAPH_SKIP_FRAMES:
+                self.graph_panel.update_graph(idx_current)
+                self.graph_update_counter = 0
 
     def animate_loop(self):
         if self.is_running:
