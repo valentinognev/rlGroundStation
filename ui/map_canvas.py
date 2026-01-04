@@ -21,6 +21,9 @@ class MapCanvas(tk.Canvas):
         self.tile_loader = TileLoader()
         self.tk_images = [] 
         
+        self.drone_graphics = {} # {drone_id: {body: id, head: id, arrow: id}}
+        self.drawn_ids_this_frame = set()
+        
         self.hud = HUD(self)
         self.input_handler = InputHandler(self)
         
@@ -36,6 +39,7 @@ class MapCanvas(tk.Canvas):
         self.px_per_meter = 1.0 / self.meters_per_px if self.meters_per_px > 0 else 1.0
         
         self.delete("all")
+        self.drone_graphics.clear()
         self.draw_map_tiles()
         self.draw_axes()
         self.update_grid_labels()
@@ -200,27 +204,74 @@ class MapCanvas(tk.Canvas):
             lon = min_lon + pct * (max_lon - min_lon)
             self.itemconfigure(f"label_lon_{i}", text=f"{lon:.5f}")
 
-    def draw_drone(self, lat, lon, heading, color, v_north, v_east):
+    def draw_drone(self, drone_id, lat, lon, heading, color, v_north, v_east):
         cx, cy = geo_math.lat_lon_to_screen(lat, lon, self.bounds, self.dims, self.padding)
         
         real_r_px = 0.13 * self.px_per_meter
         draw_r = max(real_r_px, 1.5) 
-        
-        self.create_oval(cx - draw_r, cy - draw_r, cx + draw_r, cy + draw_r, fill=color, outline=color, tags="drone")
-        
+         
         line_len = max(real_r_px * 2.0, 5.0) 
         rad = math.radians(heading)
         head_x = cx + line_len * math.sin(rad)
         head_y = cy - line_len * math.cos(rad)
         
-        self.create_line(cx, cy, head_x, head_y, fill=color, width=2, tags="drone")
+        self.drawn_ids_this_frame.add(drone_id)
         
-        if abs(v_north) > 0.1 or abs(v_east) > 0.1:
-            px_n = v_north * self.px_per_meter
-            px_e = v_east * self.px_per_meter
-            tx = cx + px_e
-            ty = cy - px_n
-            self.create_line(cx, cy, tx, ty, fill=color, width=2, arrow=tk.LAST, arrowshape=(8,10,3), tags="drone")
+        if drone_id in self.drone_graphics:
+            # Update existing
+            gfx = self.drone_graphics[drone_id]
+            self.coords(gfx['body'], cx - draw_r, cy - draw_r, cx + draw_r, cy + draw_r)
+            self.itemconfigure(gfx['body'], fill=color, outline=color, state="normal")
+            
+            self.coords(gfx['head'], cx, cy, head_x, head_y)
+            self.itemconfigure(gfx['head'], fill=color, state="normal")
+            
+            if abs(v_north) > 0.1 or abs(v_east) > 0.1:
+                px_n = v_north * self.px_per_meter
+                px_e = v_east * self.px_per_meter
+                tx = cx + px_e
+                ty = cy - px_n
+                
+                if gfx.get('arrow'):
+                    self.coords(gfx['arrow'], cx, cy, tx, ty)
+                    self.itemconfigure(gfx['arrow'], fill=color, state="normal")
+                else:
+                    arrow_id = self.create_line(cx, cy, tx, ty, fill=color, width=2, arrow=tk.LAST, arrowshape=(8,10,3), tags="drone")
+                    gfx['arrow'] = arrow_id
+            else:
+                 if gfx.get('arrow'):
+                     self.itemconfigure(gfx['arrow'], state="hidden")
+        else:
+            # Create new
+            body_id = self.create_oval(cx - draw_r, cy - draw_r, cx + draw_r, cy + draw_r, fill=color, outline=color, tags="drone")
+            head_id = self.create_line(cx, cy, head_x, head_y, fill=color, width=2, tags="drone")
+            
+            gfx = {'body': body_id, 'head': head_id, 'arrow': None}
+            
+            if abs(v_north) > 0.1 or abs(v_east) > 0.1:
+                px_n = v_north * self.px_per_meter
+                px_e = v_east * self.px_per_meter
+                tx = cx + px_e
+                ty = cy - px_n
+                arrow_id = self.create_line(cx, cy, tx, ty, fill=color, width=2, arrow=tk.LAST, arrowshape=(8,10,3), tags="drone")
+                gfx['arrow'] = arrow_id
+            
+            self.drone_graphics[drone_id] = gfx
 
     def clear_drones(self):
-        self.delete("drone")
+        # Determine tracking start (legacy name)
+        self.drawn_ids_this_frame.clear()
+
+    def finish_frame(self):
+        # Hide/Delete drones not drawn
+        to_remove = []
+        for did, gfx in self.drone_graphics.items():
+            if did not in self.drawn_ids_this_frame:
+                self.itemconfigure(gfx['body'], state="hidden")
+                self.itemconfigure(gfx['head'], state="hidden")
+                if gfx.get('arrow'):
+                    self.itemconfigure(gfx['arrow'], state="hidden")
+        
+        # Bring to front?
+        self.tag_raise("drone")
+        self.tag_raise("hud")

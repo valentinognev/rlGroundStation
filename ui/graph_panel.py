@@ -194,7 +194,7 @@ class GraphPanel(tk.Frame):
             return
 
         # 2. Identify Active Slots
-        active_slots_info = [] # list of (slot_index, field_name, items_data)
+        self.active_slots_info = [] # Store for fast refresh
         
         for i, cfg in enumerate(self.graph_configs):
             field_name = cfg['combo'].get()
@@ -204,16 +204,26 @@ class GraphPanel(tk.Frame):
             active_ids = [did for did, t in cfg['toggles'].items() if t.is_active]
             items = self._generate_plot_data(field_name, active_ids)
             
-            active_slots_info.append((i, field_name, items))
+            # Store metadata for refresh: (slot_index, field_name, active_ids)
+            # We need to re-generate items later, so we store inputs
+            self.active_slots_info.append({
+                'slot_idx': i, 
+                'field': field_name, 
+                'ids': active_ids,
+                'items': items # Initial items
+            })
             
-        num_plots = len(active_slots_info)
+        num_plots = len(self.active_slots_info)
         
         # 3. Create Subplots
         if num_plots == 0:
             self.canvas.draw()
             return
             
-        for idx, (original_slot_idx, field_name, items) in enumerate(active_slots_info):
+        for idx, info in enumerate(self.active_slots_info):
+            field_name = info['field']
+            items = info['items']
+            
             # Add subplot: nrow, ncol, index
             ax = self.fig.add_subplot(num_plots, 1, idx + 1)
             
@@ -225,15 +235,22 @@ class GraphPanel(tk.Frame):
             
             for label, color, data in items:
                 line, = ax.plot([], [], color=color, label=label, linewidth=1.5)
-                current_ax_lines.append((line, data))
+                # Store (line, label, color, d_id_ref?) 
+                # We need to know which data maps to which line for refresh.
+                # Actually, _generate_plot_data returns a list. 
+                # We assume the ORDER is deterministic (based on trajectory/ID order).
+                current_ax_lines.append(line)
+                
                 if data:
                     min_y = min(min_y, min(data))
                     max_y = max(max_y, max(data))
                     max_len = max(max_len, len(data))
                     has_data = True
             
-            # Store for update loop
-            self.active_plots.append(current_ax_lines)
+            # Store lines in the info dict so we can reuse them
+            info['lines'] = current_ax_lines
+            # Also store ax for limits update
+            info['ax'] = ax
             
             # Styling
             ax.set_ylabel(field_name)
@@ -255,13 +272,68 @@ class GraphPanel(tk.Frame):
         self.fig.tight_layout()
         self.canvas.draw()
 
+    def refresh_active_plots(self):
+        """
+        Updates the internal data cache from trajectories.
+        Does NOT necessarily redraw unless needed.
+        """
+        for info in getattr(self, 'active_slots_info', []):
+            field_name = info['field']
+            active_ids = info['ids']
+            
+            # Re-fetch data
+            # new_items is list of (label, color, data_array)
+            new_items = self._generate_plot_data(field_name, active_ids)
+            
+            # Store for update_graph to use
+            # We only store the data arrays, assuming order matches 'lines'
+            # active_slots_info['lines'] matches active_ids order?
+            # Yes, _generate_plot_data iterates active_ids order if implementation is consistent.
+            # _generate_plot_data iterates self.trajectories and checks d_id in active_ids.
+            # We assume the order of lines created in rebuild_plots matches this order.
+            
+            # Update cache
+            info['cached_data'] = [item[2] for item in new_items] # item[2] is data
+            
+            # Update limits based on full data
+            # We can optimise to only do this occasionally
+            min_y, max_y = float('inf'), float('-inf')
+            max_len = 0
+            has_data = False
+            for data in info['cached_data']:
+                if data:
+                    min_y = min(min_y, min(data))
+                    max_y = max(max_y, max(data))
+                    max_len = max(max_len, len(data))
+                    has_data = True
+            
+            if has_data:
+                info['full_limits'] = (min_y, max_y, max_len)
+                # We don't necessarily update axis limits here if we are zooming/panning,
+                # but for auto-scale we might.
+                # For now, let's update scalar limits.
+                ax = info['ax']
+                ax.set_xlim(0, max_len)
+                buf = (max_y - min_y) * 0.1 if max_y != min_y else 1.0
+                ax.set_ylim(min_y - buf, max_y + buf)
+
     def update_graph(self, frame_idx):
         frame_idx = int(frame_idx)
+        any_draw = False
         
-        # Iterate over all active plots (lists of lines)
-        for plot_lines in self.active_plots:
-            for line, data in plot_lines:
-                limit = min(frame_idx + 1, len(data))
-                line.set_data(range(limit), data[:limit])
+        for info in getattr(self, 'active_slots_info', []):
+            lines = info['lines']
+            cached_data = info.get('cached_data')
+            
+            if not cached_data or len(cached_data) != len(lines):
+                continue
                 
-        self.canvas.draw_idle()
+            for line, data in zip(lines, cached_data):
+                limit = min(frame_idx + 1, len(data))
+                # Slice logic
+                line.set_data(range(limit), data[:limit])
+                any_draw = True
+                
+        if any_draw:
+            self.canvas.draw_idle()
+

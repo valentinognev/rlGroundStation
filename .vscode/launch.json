@@ -7,14 +7,62 @@
             "request": "launch",
             "program": "${workspaceFolder}/main.py",
             "args": [
-                "-s", "file",
-                "-p", "${workspaceFolder}/data/recording.json",
-                "--width", "1400",
-                "--height", "900",
-                "--res", "1e-6"
+                "-s",
+                "file",
+                "-p",
+                "${workspaceFolder}/recording.json",
+                "--width",
+                "1400",
+                "--height",
+                "900",
+                "--res",
+                "1e-6"
             ],
             "console": "integratedTerminal",
             "justMyCode": true
+        },
+        {
+            "name": "Simulate Serial Stream",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/simulate_serial_stream.py",
+            "args": [
+                "--output",
+                "/tmp/drone_serial",
+                "--rate",
+                "10"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Drone Viz: Stream Mode",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/main.py",
+            "args": [
+                "-s",
+                "stream",
+                "-p",
+                "/tmp/drone_serial",
+                "--width",
+                "1400",
+                "--height",
+                "900",
+                "--res",
+                "1e-6"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ],
+    "compounds": [
+        {
+            "name": "Run Stream Demo",
+            "configurations": [
+                "Simulate Serial Stream",
+                "Drone Viz: Stream Mode"
+            ]
         }
     ]
 }

@@ -23,6 +23,7 @@ class DroneApp:
         self.play_head = 0.0
         self.max_frames = 0
         self.trajectories = [] 
+        self.has_centered_on_stream = False 
 
         # --- 1. SETUP TABS (NOTEBOOK) ---
         self.notebook = ttk.Notebook(root)
@@ -131,45 +132,53 @@ class DroneApp:
         active_states = {} 
         
         for i, path in enumerate(self.trajectories):
-            if idx_current < len(path):
-                state_curr = path[idx_current]
-                
-                if idx_next < len(path):
-                    state_next = path[idx_next]
-                    
-                    lat = self.lerp(state_curr.lat, state_next.lat, alpha)
-                    lon = self.lerp(state_curr.lon, state_next.lon, alpha)
-                    heading = self.lerp_angle(state_curr.heading, state_next.heading, alpha)
-                    
-                    vn = self.lerp(state_curr.velocity_north, state_next.velocity_north, alpha)
-                    ve = self.lerp(state_curr.velocity_east, state_next.velocity_east, alpha)
-                else:
-                    lat = state_curr.lat
-                    lon = state_curr.lon
-                    heading = state_curr.heading
-                    vn = state_curr.velocity_north
-                    ve = state_curr.velocity_east
+            if not path:
+                continue
 
-                # Store state for HUD
-                active_states[state_curr.id] = state_curr
+            # Clamp index to available data for this drone
+            # This prevents flickering if one drone lags behind the global max_frames
+            curr_idx_clamped = min(idx_current, len(path) - 1)
+            state_curr = path[curr_idx_clamped]
+            
+            # For interpolation, we also need to respect the path bounds
+            next_idx_clamped = min(idx_next, len(path) - 1)
+            
+            if curr_idx_clamped != next_idx_clamped:
+                state_next = path[next_idx_clamped]
                 
-                color_idx = (state_curr.id - 1) % len(self.DRONE_COLORS)
-                color = self.DRONE_COLORS[color_idx]
+                lat = self.lerp(state_curr.lat, state_next.lat, alpha)
+                lon = self.lerp(state_curr.lon, state_next.lon, alpha)
+                heading = self.lerp_angle(state_curr.heading, state_next.heading, alpha)
                 
-                self.map_view.draw_drone(lat, lon, heading, color, vn, ve)
+                vn = self.lerp(state_curr.velocity_north, state_next.velocity_north, alpha)
+                ve = self.lerp(state_curr.velocity_east, state_next.velocity_east, alpha)
+            else:
+                lat = state_curr.lat
+                lon = state_curr.lon
+                heading = state_curr.heading
+                vn = state_curr.velocity_north
+                ve = state_curr.velocity_east
 
+            # Store state for HUD
+            active_states[state_curr.id] = state_curr
+            
+            color_idx = (state_curr.id - 1) % len(self.DRONE_COLORS)
+            color = self.DRONE_COLORS[color_idx]
+            
+            self.map_view.draw_drone(state_curr.id, lat, lon, heading, color, vn, ve)
+
+        self.map_view.finish_frame()
         self.map_view.draw_hud(active_states, self.DRONE_COLORS)
 
         # --- Update Graphs (with throttling and visibility check) ---
         # Only update if the Graph tab is actually selected
         current_tab = self.notebook.select()  # Returns widget ID
-        graph_tab_id = self.tab_graphs._w     # Get widget ID of graph tab frame (tk internal)
         
-        # Tkinter widget IDs are strings. 
-        # notebook.select() returns the window path name of the currently selected pane.
         if str(current_tab) == str(self.tab_graphs):
             self.graph_update_counter += 1
             if self.graph_update_counter >= self.GRAPH_SKIP_FRAMES:
+                # Refresh data cache before drawing
+                self.graph_panel.refresh_active_plots()
                 self.graph_panel.update_graph(idx_current)
                 self.graph_update_counter = 0
 
@@ -180,3 +189,40 @@ class DroneApp:
                 self.play_head = 0.0
             self.draw_frame()
         self.root.after(self.RENDER_DELAY, self.animate_loop)
+
+    def process_new_state(self, state):
+        """
+        Ingests a new drone state from the live stream.
+        """
+        # Ensure we have a list for this drone
+        # Assuming struct ID is 1-based, we map to index ID-1
+        idx = state.id - 1
+        
+        # Check if this is a new drone to trigger UI rebuild
+        is_new_drone = False
+        while len(self.trajectories) <= idx:
+            self.trajectories.append([])
+            is_new_drone = True
+
+        self.trajectories[idx].append(state)
+        
+        # In live mode, we treat the current frame count of this drone as the max
+        # If we have multiple drones, they should be roughly synced, 
+        # so max_frames is the length of the longest history.
+        self.max_frames = max(len(t) for t in self.trajectories) - 1
+        self.controls.set_slider_max(self.max_frames)
+
+        # Auto-scroll to latest
+        # In a real app we might want a "Live" toggle. 
+        # For now, if we are receiving data, we jump to the latest.
+        self.play_head = float(self.max_frames)
+        self.draw_frame()
+        
+        if is_new_drone:
+            self.graph_panel.set_data(self.trajectories, self.DRONE_COLORS)
+
+        # Center map on Drone 1 if first time seeing it
+        if not self.has_centered_on_stream and state.id == 1:
+            print(f"Stream: Centering map on Drone 1 ({state.lat}, {state.lon})")
+            self.map_view.set_center(state.lat, state.lon)
+            self.has_centered_on_stream = True
