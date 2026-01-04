@@ -226,6 +226,10 @@ class MapCanvas(tk.Canvas):
             self.coords(gfx['head'], cx, cy, head_x, head_y)
             self.itemconfigure(gfx['head'], fill=color, state="normal")
             
+            # Update Label
+            self.coords(gfx['label'], cx + draw_r + 5, cy - draw_r - 5)
+            self.itemconfigure(gfx['label'], state="normal")
+
             if abs(v_north) > 0.1 or abs(v_east) > 0.1:
                 px_n = v_north * self.px_per_meter
                 px_e = v_east * self.px_per_meter
@@ -246,7 +250,11 @@ class MapCanvas(tk.Canvas):
             body_id = self.create_oval(cx - draw_r, cy - draw_r, cx + draw_r, cy + draw_r, fill=color, outline=color, tags="drone")
             head_id = self.create_line(cx, cy, head_x, head_y, fill=color, width=2, tags="drone")
             
-            gfx = {'body': body_id, 'head': head_id, 'arrow': None}
+            # Create Label
+            label_id = self.create_text(cx + draw_r + 5, cy - draw_r - 5, text=str(drone_id), 
+                                        anchor="sw", font=("Arial", 9, "bold"), fill="black", tags="drone")
+            
+            gfx = {'body': body_id, 'head': head_id, 'label': label_id, 'arrow': None}
             
             if abs(v_north) > 0.1 or abs(v_east) > 0.1:
                 px_n = v_north * self.px_per_meter
@@ -269,6 +277,7 @@ class MapCanvas(tk.Canvas):
             if did not in self.drawn_ids_this_frame:
                 self.itemconfigure(gfx['body'], state="hidden")
                 self.itemconfigure(gfx['head'], state="hidden")
+                self.itemconfigure(gfx['label'], state="hidden")
                 if gfx.get('arrow'):
                     self.itemconfigure(gfx['arrow'], state="hidden")
         

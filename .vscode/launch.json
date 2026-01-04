@@ -10,7 +10,7 @@
                 "-s",
                 "file",
                 "-p",
-                "${workspaceFolder}/recording.json",
+                "${workspaceFolder}/data/recording.json",
                 "--width",
                 "1400",
                 "--height",
