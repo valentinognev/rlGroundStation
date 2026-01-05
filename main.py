@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, simpledialog
 import json
 import os
 import sys
@@ -110,8 +110,14 @@ def main():
         if file_path:
             load_file_content(file_path, app)
 
+    def handle_ui_connect_request():
+        path = simpledialog.askstring("Connect to Stream", "Enter Serial Path:", initialvalue="/tmp/drone_serial")
+        if path:
+            print(f"User requested connection to: {path}")
+            start_stream(path, app)
+
     # Init App
-    app = DroneApp(root, bounds, args.width, args.height, args.res, handle_ui_load_request)
+    app = DroneApp(root, bounds, args.width, args.height, args.res, handle_ui_load_request, handle_ui_connect_request)
 
     # --- CLI Auto-Load Logic ---
     if args.source == "file":

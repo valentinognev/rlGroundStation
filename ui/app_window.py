@@ -1,6 +1,10 @@
 import tkinter as tk
 from tkinter import ttk
 import math
+from dataclasses import asdict
+import json
+import os
+from tkinter import filedialog
 from ui.map_canvas import MapCanvas
 from ui.controls import ControlPanel
 from ui.graph_panel import GraphPanel
@@ -16,7 +20,7 @@ class DroneApp:
     graph_update_counter = 0
     GRAPH_SKIP_FRAMES = 3   # Update graph every N render ticks (approx 20 FPS)
 
-    def __init__(self, root, map_bounds, width, height, resolution, on_load_request):
+    def __init__(self, root, map_bounds, width, height, resolution, on_load_request, on_connect_request):
         self.root = root
         self.is_running = False
         
@@ -24,6 +28,10 @@ class DroneApp:
         self.max_frames = 0
         self.trajectories = [] 
         self.has_centered_on_stream = False 
+
+        # Recording State
+        self.is_recording = False
+        self.recording_buffer = [] # List[List[DroneSelfState]] - mimicking trajectories structure
 
         # --- 1. SETUP TABS (NOTEBOOK) ---
         self.notebook = ttk.Notebook(root)
@@ -52,7 +60,9 @@ class DroneApp:
             'pause': self.pause,
             'reset': self.reset,
             'drag': self.on_scrub,
-            'load': on_load_request 
+            'load': on_load_request,
+            'connect': on_connect_request,
+            'record': self.toggle_recording
         }
         self.controls = ControlPanel(root, callbacks)
         self.controls.pack(side=tk.BOTTOM, fill=tk.X)
@@ -221,8 +231,58 @@ class DroneApp:
         if is_new_drone:
             self.graph_panel.set_data(self.trajectories, self.DRONE_COLORS)
 
+        # -- RECORDING LOGIC --
+        if self.is_recording:
+            # Ensure buffer has space
+            while len(self.recording_buffer) <= idx:
+                self.recording_buffer.append([])
+            self.recording_buffer[idx].append(state)
+
         # Center map on Drone 1 if first time seeing it
         if not self.has_centered_on_stream and state.id == 1:
             print(f"Stream: Centering map on Drone 1 ({state.lat}, {state.lon})")
             self.map_view.set_center(state.lat, state.lon)
             self.has_centered_on_stream = True
+
+    def toggle_recording(self):
+        if self.is_recording:
+            # Stop Recording
+            self.is_recording = False
+            self.controls.update_record_btn_state(False)
+            self.controls.update_status("Recording Stopped")
+            
+            # Save Dialog
+            if any(self.recording_buffer):
+                file_path = filedialog.asksaveasfilename(
+                    title="Save Recording",
+                    defaultextension=".json",
+                    filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")],
+                    initialdir=os.getcwd()
+                )
+                if file_path:
+                    try:
+                        # Convert buffer to list of list of dicts
+                        output_data = []
+                        for path in self.recording_buffer:
+                            path_dicts = [asdict(s) for s in path]
+                            output_data.append(path_dicts)
+                        
+                        with open(file_path, 'w') as f:
+                            json.dump(output_data, f, indent=4)
+                        print(f"Recording saved to {file_path}")
+                        self.controls.update_status("Recording Saved")
+                    except Exception as e:
+                        print(f"Failed to save recording: {e}")
+                        self.controls.update_status("Save Failed")
+            else:
+                self.controls.update_status("Buffer Empty")
+            
+            # Clear buffer
+            self.recording_buffer = []
+            
+        else:
+            # Start Recording
+            self.is_recording = True
+            self.recording_buffer = [] # Reset buffer
+            self.controls.update_record_btn_state(True)
+            self.controls.update_status("Recording...")

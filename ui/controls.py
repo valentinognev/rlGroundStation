@@ -3,7 +3,7 @@ import tkinter as tk
 class ControlPanel(tk.Frame):
     def __init__(self, parent, callbacks):
         """
-        callbacks: dict containing 'play', 'pause', 'reset', 'drag', 'load'
+        callbacks: dict containing 'play', 'pause', 'reset', 'drag', 'load', 'connect', 'record'
         """
         super().__init__(parent, height=100, bg="#f0f0f0")
         self.callbacks = callbacks
@@ -26,7 +26,13 @@ class ControlPanel(tk.Frame):
         self.lbl_status = tk.Label(btn_box, text="Status: Ready", font=("Arial", 10), bg="#f0f0f0")
         self.lbl_status.pack(side=tk.LEFT, padx=10)
         
-        # Right Side - NEW LOAD BUTTON
+        # Right Side - NEW LOAD & CONNECT BUTTONS
+        self.btn_connect = tk.Button(btn_box, text="Connect", command=callbacks['connect'], bg="#ddddff")
+        self.btn_connect.pack(side=tk.RIGHT, padx=5, pady=5)
+        
+        self.btn_record = tk.Button(btn_box, text="Record", command=callbacks['record'], bg="#ffdddd")
+        self.btn_record.pack(side=tk.RIGHT, padx=5, pady=5)
+
         self.btn_load = tk.Button(btn_box, text="Load Data", command=callbacks['load'], bg="#ddddff")
         self.btn_load.pack(side=tk.RIGHT, padx=10, pady=5)
 
@@ -50,3 +56,9 @@ class ControlPanel(tk.Frame):
 
     def set_slider_val(self, val):
         self.slider.set(val)
+
+    def update_record_btn_state(self, is_recording):
+        if is_recording:
+            self.btn_record.config(text="Stop Rec", bg="#ff5555", fg="white")
+        else:
+            self.btn_record.config(text="Record", bg="#ffdddd", fg="black")
