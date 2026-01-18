@@ -8,7 +8,7 @@ import threading
 import core.cfg as cfg
 from core.drone_state import DroneSelfState
 from ui.app_window import DroneApp
-from serial.serial_bridge import SerialBridge
+from gs_serial.serial_bridge import SerialBridge
 
 def load_file_content(file_path, app):
     """
@@ -40,6 +40,8 @@ def load_file_content(file_path, app):
         print(f"Failed to load file: {e}")
         messagebox.showerror("Load Error", f"Could not load file:\n{e}")
 
+import serial  # Ensure pyserial is installed
+
 def start_stream(path, app):
     """
     Starts a thread to read from the serial/pipe and update arguments.
@@ -53,23 +55,40 @@ def start_stream(path, app):
         # But open() on FIFO blocks until writer opens it.
         
         bridge = SerialBridge()
+        serial_obj = None
+        fd = None
         
         try:
-            # We open with os.open to be potentially non-blocking or just standard open
-            # But the bridge takes a file descriptor (int).
-            # Python's open() returns a file object, we need fileno().
-            # Note: For FIFO, open() blocks until writer is active.
-            
-            # Since serial_reader.cpp expects a read loop, we can just pass the FD.
-            # But wait, read_drone_state does ONE read of a struct. It loops internally for partials of THAT struct.
-            # We need to loop endlessly here.
-            
-            fd = os.open(path, os.O_RDONLY) # Blocks here for FIFO
+            if path.startswith("/dev/tty"):
+                # Real serial port requires configuration
+                print(f"Opening Serial Port {path} at 115200 baud...")
+                try:
+                    # buffer_size=0 to minimize latency? Or default.
+                    # timeout=None means blocking read (wait forever for data)
+                    # This prevents read() returning b'' (EOF) just because of a timeout
+                    serial_obj = serial.Serial(path, 115200, timeout=None)
+                    fd = serial_obj.fileno()
+                except serial.SerialException as e:
+                    print(f"Failed to open serial port: {e}")
+                    return
+            else:
+                # FIFO or file
+                # Since serial_reader.cpp expects a read loop, we can just pass the FD.
+                # But wait, read_drone_state does ONE read of a struct. It loops internally for partials of THAT struct.
+                # We need to loop endlessly here.
+                fd = os.open(path, os.O_RDONLY) # Blocks here for FIFO
+                
             print("Stream Connected.")
             
             while True:
                 # read_state returns DroneSelfState or None
-                state = bridge.read_state(fd)
+                # Pass the serial object if it exists so we use its read() method (blocking)
+                # Otherwise pass the FD (for pipes/files)
+                if serial_obj:
+                    state = bridge.read_state(serial_obj)
+                else:
+                    state = bridge.read_state(fd)
+                    
                 if state:
                     # Push to UI thread
                     app.root.after(0, app.process_new_state, state)
@@ -80,10 +99,15 @@ def start_stream(path, app):
                     print("Stream Ended or Error.")
                     break
             
-            os.close(fd)
+            if serial_obj:
+                serial_obj.close()
+            elif fd:
+                os.close(fd)
             
         except Exception as e:
             print(f"Stream Error: {e}")
+            import traceback
+            traceback.print_exc()
 
     t = threading.Thread(target=read_loop, daemon=True)
     t.start()

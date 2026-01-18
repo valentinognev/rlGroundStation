@@ -206,6 +206,10 @@ class DroneApp:
         """
         # Ensure we have a list for this drone
         # Assuming struct ID is 1-based, we map to index ID-1
+        if state.id < 1:
+            print(f"[WARNING] Received invalid drone ID: {state.id}. Ignoring.")
+            return
+
         idx = state.id - 1
         
         # Check if this is a new drone to trigger UI rebuild
