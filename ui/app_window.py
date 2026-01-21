@@ -32,6 +32,11 @@ class DroneApp:
         # Recording State
         self.is_recording = False
         self.recording_buffer = [] # List[List[DroneSelfState]] - mimicking trajectories structure
+        
+        # Smoothing for live stream display (reduces jitter from pixel rounding)
+        # Format: {drone_id: {'lat': float, 'lon': float, 'heading': float, 'vn': float, 've': float}}
+        self.smoothed_positions = {}
+        self.SMOOTHING_FACTOR = 0.3  # 0 = no change, 1 = instant (no smoothing), 0.3 = smooth
 
         # --- 1. SETUP TABS (NOTEBOOK) ---
         self.notebook = ttk.Notebook(root)
@@ -169,6 +174,15 @@ class DroneApp:
                 vn = state_curr.velocity_north
                 ve = state_curr.velocity_east
 
+            # Use smoothed positions if available (for live streaming)
+            if state_curr.id in self.smoothed_positions:
+                sp = self.smoothed_positions[state_curr.id]
+                lat = sp['lat']
+                lon = sp['lon']
+                heading = sp['heading']
+                vn = sp['vn']
+                ve = sp['ve']
+
             # Store state for HUD
             active_states[state_curr.id] = state_curr
             
@@ -247,6 +261,29 @@ class DroneApp:
             print(f"Stream: Centering map on Drone 1 ({state.lat}, {state.lon})")
             self.map_view.set_center(state.lat, state.lon)
             self.has_centered_on_stream = True
+            # Initialize smoothed position for first drone
+            self.smoothed_positions[state.id] = {
+                'lat': state.lat, 'lon': state.lon, 'heading': state.heading,
+                'vn': state.velocity_north, 've': state.velocity_east
+            }
+        
+        # Update smoothed position with exponential moving average
+        if state.id in self.smoothed_positions:
+            sp = self.smoothed_positions[state.id]
+            alpha = self.SMOOTHING_FACTOR
+            sp['lat'] = sp['lat'] + alpha * (state.lat - sp['lat'])
+            sp['lon'] = sp['lon'] + alpha * (state.lon - sp['lon'])
+            # Smooth heading with angle wrap handling
+            hdg_diff = (state.heading - sp['heading'] + 180) % 360 - 180
+            sp['heading'] = (sp['heading'] + alpha * hdg_diff) % 360
+            sp['vn'] = sp['vn'] + alpha * (state.velocity_north - sp['vn'])
+            sp['ve'] = sp['ve'] + alpha * (state.velocity_east - sp['ve'])
+        else:
+            # First time seeing this drone - initialize
+            self.smoothed_positions[state.id] = {
+                'lat': state.lat, 'lon': state.lon, 'heading': state.heading,
+                'vn': state.velocity_north, 've': state.velocity_east
+            }
 
     def toggle_recording(self):
         if self.is_recording:

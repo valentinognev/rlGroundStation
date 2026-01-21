@@ -135,7 +135,7 @@ def main():
             load_file_content(file_path, app)
 
     def handle_ui_connect_request():
-        path = simpledialog.askstring("Connect to Stream", "Enter Serial Path:", initialvalue="/tmp/drone_serial")
+        path = simpledialog.askstring("Connect to Stream", "Enter Serial Path:", initialvalue="/dev/ttyUSB0")
         if path:
             print(f"User requested connection to: {path}")
             start_stream(path, app)

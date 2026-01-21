@@ -207,10 +207,11 @@ class MapCanvas(tk.Canvas):
     def draw_drone(self, drone_id, lat, lon, heading, color, v_north, v_east):
         cx, cy = geo_math.lat_lon_to_screen(lat, lon, self.bounds, self.dims, self.padding)
         
-        real_r_px = 0.13 * self.px_per_meter
-        draw_r = max(real_r_px, 1.5) 
+        # Drone visual radius (0.26m = 2x original 0.13m for better visibility)
+        real_r_px = 0.26 * self.px_per_meter
+        draw_r = max(real_r_px, 3.0)  # Minimum 3px (2x original 1.5px)
          
-        line_len = max(real_r_px * 2.0, 5.0) 
+        line_len = max(real_r_px * 2.0, 10.0)  # Heading line (2x original minimum) 
         rad = math.radians(heading)
         head_x = cx + line_len * math.sin(rad)
         head_y = cy - line_len * math.cos(rad)
@@ -231,8 +232,9 @@ class MapCanvas(tk.Canvas):
             self.itemconfigure(gfx['label'], state="normal")
 
             if abs(v_north) > 0.1 or abs(v_east) > 0.1:
-                px_n = v_north * self.px_per_meter
-                px_e = v_east * self.px_per_meter
+                # Velocity vector scaled 2x to match drone size
+                px_n = v_north * self.px_per_meter * 2
+                px_e = v_east * self.px_per_meter * 2
                 tx = cx + px_e
                 ty = cy - px_n
                 
@@ -257,8 +259,9 @@ class MapCanvas(tk.Canvas):
             gfx = {'body': body_id, 'head': head_id, 'label': label_id, 'arrow': None}
             
             if abs(v_north) > 0.1 or abs(v_east) > 0.1:
-                px_n = v_north * self.px_per_meter
-                px_e = v_east * self.px_per_meter
+                # Velocity vector scaled 2x to match drone size
+                px_n = v_north * self.px_per_meter * 2
+                px_e = v_east * self.px_per_meter * 2
                 tx = cx + px_e
                 ty = cy - px_n
                 arrow_id = self.create_line(cx, cy, tx, ty, fill=color, width=2, arrow=tk.LAST, arrowshape=(8,10,3), tags="drone")

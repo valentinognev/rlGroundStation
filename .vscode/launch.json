@@ -44,7 +44,7 @@
                 "-s",
                 "stream",
                 "-p",
-                "/tmp/drone_serial",
+                "/dev/ttyUSB1",
                 "--width",
                 "1400",
                 "--height",
