@@ -14,13 +14,28 @@ rlGroundStation is a Python-based Ground Control Station (GCS) visualization too
 
 ## Installation
 
-Ensure you have Python 3 installed. The application depends on standard libraries and `tkinter` for the GUI.
+### From Source
 
-Dependencies:
-```bash
-pip install pyserial
-```
-*Note: `tkinter` is usually included with Python, but on some Linux distros you might need to install `python3-tk`.*
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/valentinognev/rlGroundStation
+   cd rlGroundStation
+   ```
+
+2. **Install dependencies:**
+   Ensure you have Python 3 installed.
+   ```bash
+   pip install pyserial
+   ```
+   *Note: On some Linux distributions (like Ubuntu), you may also need to install Tkinter system-wide:*
+   ```bash
+   sudo apt-get install python3-tk
+   ```
+
+3. **Launch the application:**
+   ```bash
+   python main.py
+   ```
 
 ## Usage
 
